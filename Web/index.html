@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AWS CRUD Notes</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
+   
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="hero-main">
+          <div class="brand-row">
+            <span class="brand-icon">▣</span>
+            <span>Serverless AWS Portfolio Project</span>
+          </div>
+          <h1>Notes</h1>
+          <p class="subtitle strong-subtitle">Quick demo CRUD app on AWS 🚀</p>
+          <p class="subtitle">API Gateway + Lambda + DynamoDB + S3 + Cognito</p>
+        </div>
+
+        <aside class="hero-side">
+          <div class="architecture-card">
+            <div class="metric-topline">
+              <span>Architecture</span>
+              <strong>Serverless + authenticated</strong>
+            </div>
+            <div class="service-flow" aria-label="Application architecture flow">
+              <div class="service-node purple"><span>⟐</span><small>API Gateway</small></div>
+              <i>→</i>
+              <div class="service-node orange"><span>λ</span><small>Lambda</small></div>
+              <i>→</i>
+              <div class="service-node blue"><span>▤</span><small>DynamoDB</small></div>
+              <i>→</i>
+              <div class="service-node green"><span>◯</span><small>S3</small></div>
+              <i>→</i>
+              <div class="service-node red"><span>▣</span><small>Cognito Auth</small></div>
+            </div>
+            <div class="architecture-badge">🛡 Secure · Scalable · Cost-effective</div>
+          </div>
+
+          <div class="data-card">
+            <div class="metric-topline">
+              <span>Data model</span>
+              <strong>userId + noteId</strong>
+            </div>
+            <div class="schema-diagram">
+              <div class="schema-table users-table">
+                <h4>Users</h4>
+                <p>userId <b>(PK)</b></p>
+                <p>email</p>
+                <p>createdAt</p>
+              </div>
+              <div class="schema-link"></div>
+              <div class="schema-table notes-table">
+                <h4>Notes</h4>
+                <p>noteId <b>(PK)</b></p>
+                <p>userId <b>(FK)</b></p>
+                <p>title</p>
+                <p>content</p>
+                <p>createdAt</p>
+                <p>updatedAt</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+
+      <section class="signup-strip" id="signupSection">
+        <div class="signup-heading">
+          <span class="signup-icon">♙</span>
+          <div>
+            <div class="eyebrow no-margin">Create your account</div>
+            <h2>Start using CrudNotes</h2>
+            <p class="muted">Sign up with your email. Cognito will send a verification code to confirm your account.</p>
+          </div>
+        </div>
+        <div class="signup-form-row">
+          <input id="signupName" type="text" placeholder="Display name" autocomplete="name" />
+          <input id="signupEmail" type="email" placeholder="Email address" autocomplete="email" />
+          <input id="signupPassword" type="password" placeholder="Create password" autocomplete="new-password" />
+          <button class="primary gradient-btn" onclick="signUp()">Sign Up</button>
+        </div>
+        <p class="auth-switch">Already have an account? <button type="button" onclick="focusLogin()">Log in</button></p>
+      </section>
+
+      <section class="layout app-only">
+        <div class="card">
+          <h2>Create Note</h2>
+          <p class="muted">Capture a quick idea, task, class note, or AWS learning checkpoint.</p>
+          <div class="field-grid">
+            <input id="title" placeholder="Note title" />
+            <textarea id="content" rows="4" placeholder="Write your note..."></textarea>
+            <button class="primary" onclick="createNote()">Create Note</button>
+          </div>
+        </div>
+
+        <section class="notes-shell">
+          <div class="section-head">
+            <div>
+              <h2>All Notes</h2>
+              <p class="muted">Only notes for the signed-in user are returned.</p>
+            </div>
+            <button class="ghost" onclick="loadNotes()">Refresh</button>
+          </div>
+          <div id="list" class="list"></div>
+        </section>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="authModal" aria-hidden="true">
+      <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <button class="modal-close" type="button" onclick="closeAuthModal()" aria-label="Close verification modal">×</button>
+        <div class="confirm-icon">✉</div>
+        <h2 id="confirmTitle">Confirm your account</h2>
+        <p class="muted center-text">We've sent a verification code to <strong id="confirmEmailLabel">your email</strong>. Enter the code below to verify your account.</p>
+        <input id="confirmEmail" type="email" placeholder="Email address" autocomplete="email" />
+        <input id="confirmCode" type="text" placeholder="Verification code" />
+        <button class="primary gradient-btn full-width" onclick="confirmSignUp()">Confirm</button>
+        <p class="auth-switch">Already confirmed? <button type="button" onclick="closeAuthModal(); focusLogin();">Log in</button></p>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

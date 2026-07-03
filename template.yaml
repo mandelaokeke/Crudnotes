@@ -1,0 +1,221 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: CrudNotes serverless CRUD app (API Gateway + Lambda + DynamoDB + S3)
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref NotesTable
+
+Resources:
+  CrudApi:
+
+    Type: AWS::Serverless::Api
+
+    Properties:
+
+      StageName: Prod
+
+      Cors:
+
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+
+        AllowHeaders: "'Content-Type,Authorization'"
+
+        AllowOrigin: "'https://d2ry7dhe3mi7i1.cloudfront.net'"
+
+      Auth:
+
+        DefaultAuthorizer: CognitoAuthorizer
+
+        AddDefaultAuthorizerToCorsPreflight: false
+
+        Authorizers:
+
+          CognitoAuthorizer:
+
+            UserPoolArn: !GetAtt UserPool.Arn
+
+  NotesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: noteId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: noteId
+          KeyType: RANGE
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-frontend-oac"
+        Description: Origin access control for CrudNotes frontend bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: FrontendS3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !Ref FrontendOriginAccessControl
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}"
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AWS::StackName}-client"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  NotesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: BACKEND/
+      Handler: app.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NotesTable
+      Events:
+        GetNotes:
+          Type: Api
+          Properties:
+            Path: /notes
+            Method: GET
+            RestApiId: !Ref CrudApi
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateNote:
+          Type: Api
+          Properties:
+            Path: /notes
+            Method: POST
+            RestApiId: !Ref CrudApi
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateNote:
+          Type: Api
+          Properties:
+            Path: /notes/{noteId}
+            Method: PUT
+            RestApiId: !Ref CrudApi
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteNote:
+          Type: Api
+          Properties:
+            Path: /notes/{noteId}
+            Method: DELETE
+            RestApiId: !Ref CrudApi
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${CrudApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+
+  FrontendBucketName:
+    Description: Private S3 bucket for the frontend static files
+    Value: !Ref FrontendBucket
+
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID for cache invalidations
+    Value: !Ref FrontendDistribution
+
+  CloudFrontUrl:
+    Description: Default CloudFront HTTPS URL for the frontend
+    Value: !Sub "https://${FrontendDistribution.DomainName}"

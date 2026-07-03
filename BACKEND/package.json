@@ -1,0 +1,7 @@
+{
+    "name": "notes-backend",
+    "version": "1.0.0",
+    "dependencies": {
+      "@aws-sdk/client-dynamodb": "^3.921.0"
+    }
+  }
