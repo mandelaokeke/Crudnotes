@@ -58,39 +58,38 @@ function setSignedInView(isSignedIn) {
 }
 
 function showSignupCard() {
-  const signup = document.getElementById("signupFields");
-  const login = document.getElementById("loginFields");
+  const signupSection = document.getElementById("signupSection");
+  const loginSection = document.getElementById("loginSection");
 
-  signup?.classList.add("active");
-  login?.classList.remove("active");
+  if (loginSection) {
+    loginSection.classList.remove("active");
+    loginSection.style.display = "none";
+  }
 
-  if (signup) signup.style.display = "block";
-  if (login) login.style.display = "none";
+  if (signupSection) {
+    signupSection.classList.add("active");
+    signupSection.style.display = "";
+  }
 
-  const label = document.getElementById("authModeLabel");
-  const title = document.getElementById("authCardTitle");
-  const copy = document.getElementById("authCardCopy");
-  if (label) label.textContent = "Create your account";
-  if (title) title.textContent = "Start using CrudNotes";
-  if (copy) copy.textContent = "Sign up with your email. Cognito will send a verification code to confirm your account.";
+  setTimeout(() => document.getElementById("signupEmail")?.focus(), 250);
 }
 
 function showLoginCard() {
-  const signup = document.getElementById("signupFields");
-  const login = document.getElementById("loginFields");
+  const signupSection = document.getElementById("signupSection");
+  const loginSection = document.getElementById("loginSection");
 
-  login?.classList.add("active");
-  signup?.classList.remove("active");
+  if (signupSection) {
+    signupSection.classList.remove("active");
+    signupSection.style.display = "none";
+  }
 
-  if (login) login.style.display = "block";
-  if (signup) signup.style.display = "none";
+  if (loginSection) {
+    loginSection.classList.add("active");
+    loginSection.style.display = "";
+    loginSection.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
-  const label = document.getElementById("authModeLabel");
-  const title = document.getElementById("authCardTitle");
-  const copy = document.getElementById("authCardCopy");
-  if (label) label.textContent = "Welcome back";
-  if (title) title.textContent = "Log in to CrudNotes";
-  if (copy) copy.textContent = "Enter your email and password to continue managing your private notes.";
+  setTimeout(() => document.getElementById("loginEmail")?.focus(), 250);
 }
 
 function updateAppVisibility() {
@@ -98,10 +97,10 @@ function updateAppVisibility() {
 
   setSignedInView(isSignedIn);
 
-  const authSection = document.getElementById("signupSection");
-  if (authSection) {
-    authSection.style.display = isSignedIn ? "none" : "";
-  }
+  const signupSection = document.getElementById("signupSection");
+  const loginSection = document.getElementById("loginSection");
+  if (signupSection) signupSection.style.display = isSignedIn ? "none" : "";
+  if (loginSection) loginSection.style.display = "none";
 
   if (isSignedIn) {
     const displayName = localStorage.getItem("crudnotes_display_name") || "there";
@@ -121,8 +120,6 @@ function scrollToSignup() {
 
 function focusLogin() {
   showLoginCard();
-  document.getElementById("signupSection")?.scrollIntoView({ behavior: "smooth", block: "center" });
-  setTimeout(() => document.getElementById("loginEmail")?.focus(), 250);
 }
 
 function bindAuthToggleButtons() {
