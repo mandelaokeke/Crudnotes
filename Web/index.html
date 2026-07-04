@@ -85,7 +85,24 @@
           <input id="signupPassword" type="password" placeholder="Create password" autocomplete="new-password" />
           <button class="primary gradient-btn" onclick="signUp()">Sign Up</button>
         </div>
-        <p class="auth-switch-text">Already have an account? <button type="button" class="auth-switch login-link" data-auth-mode="login" onclick="focusLogin()">Log in</button></p>
+        <p class="auth-switch-text">Already have an account? <button type="button" class="auth-switch login-link" data-auth-mode="login" onclick="showLoginCard()">Log in</button></p>
+      </section>
+
+      <section class="signup-strip" id="loginSection" style="display: none;">
+        <div class="signup-heading">
+          <span class="signup-icon">↪</span>
+          <div>
+            <div class="eyebrow no-margin">Welcome back</div>
+            <h2>Log in to CrudNotes</h2>
+            <p class="muted">Use the Cognito account you already created to access your notes.</p>
+          </div>
+        </div>
+        <div class="signup-form-row">
+          <input id="loginEmail" type="email" placeholder="Email address" autocomplete="email" />
+          <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
+          <button class="primary gradient-btn" onclick="signIn()">Log In</button>
+        </div>
+        <p class="auth-switch-text">Need an account? <button type="button" class="auth-switch signup-link" data-auth-mode="signup" onclick="showSignupCard()">Sign up</button></p>
       </section>
 
       <section class="layout app-only">
@@ -121,7 +138,7 @@
         <input id="confirmEmail" type="email" placeholder="Email address" autocomplete="email" />
         <input id="confirmCode" type="text" placeholder="Verification code" />
         <button class="primary gradient-btn full-width" onclick="confirmSignUp()">Confirm</button>
-        <p class="auth-switch-text">Already confirmed? <button type="button" class="auth-switch login-link" data-auth-mode="login" onclick="closeAuthModal(); focusLogin();">Log in</button></p>
+        <p class="auth-switch-text">Already confirmed? <button type="button" class="auth-switch login-link" data-auth-mode="login" onclick="closeAuthModal(); showLoginCard();">Log in</button></p>
       </div>
     </div>
 
