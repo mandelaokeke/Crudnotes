@@ -802,3 +802,33 @@ button:hover { transform: translateY(-1px); }
 #loginFields.active {
   display: block !important;
 }
+
+.sidebar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.logout-btn {
+  color: #b91c1c;
+  border: 1px solid rgba(185, 28, 28, 0.25);
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.logout-btn:hover,
+.logout-btn:focus-visible {
+  background: rgba(254, 226, 226, 0.9);
+}
+
+@media (max-width: 900px) {
+  .sidebar-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .sidebar-actions button {
+    flex: 1;
+  }
+}

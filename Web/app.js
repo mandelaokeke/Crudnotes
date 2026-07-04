@@ -11,6 +11,8 @@ const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 let lastSignupEmail = "";
 let notesCache = [];
 let selectedNoteId = null;
+const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+let sessionTimeoutId = null;
 
 function getAuthToken() {
   return localStorage.getItem("crudnotes_id_token");
@@ -51,6 +53,33 @@ function getConfirmEmail() {
 function setAuthStatus(message) {
   const status = document.getElementById("authStatus");
   if (status) status.textContent = message;
+}
+
+function resetSessionTimeout() {
+  if (sessionTimeoutId) {
+    clearTimeout(sessionTimeoutId);
+    sessionTimeoutId = null;
+  }
+
+  if (!getAuthToken()) return;
+
+  sessionTimeoutId = setTimeout(() => {
+    alert("Your session timed out after 5 minutes of inactivity. Please log in again.");
+    signOut();
+  }, SESSION_TIMEOUT_MS);
+}
+
+function stopSessionTimeout() {
+  if (sessionTimeoutId) {
+    clearTimeout(sessionTimeoutId);
+    sessionTimeoutId = null;
+  }
+}
+
+function bindSessionActivityTracking() {
+  ["click", "keydown", "mousemove", "scroll", "touchstart"].forEach(eventName => {
+    window.addEventListener(eventName, resetSessionTimeout, { passive: true });
+  });
 }
 
 function setSignedInView(isSignedIn) {
@@ -114,10 +143,12 @@ function updateAppVisibility() {
 
     const displayName = localStorage.getItem("crudnotes_display_name") || "there";
     setAuthStatus(`Welcome back, ${displayName}. Your notes are private to your account.`);
+    resetSessionTimeout();
     return;
   }
 
   setAuthStatus("Sign in to manage your notes.");
+  stopSessionTimeout();
   notesCache = [];
   selectedNoteId = null;
 
@@ -322,10 +353,24 @@ function signIn() {
 }
 
 function signOut() {
+  stopSessionTimeout();
+
   const user = userPool.getCurrentUser();
   if (user) user.signOut();
+
   setAuthToken(null);
   localStorage.removeItem("crudnotes_display_name");
+  notesCache = [];
+  selectedNoteId = null;
+
+  const titleInput = document.getElementById("title");
+  const contentInput = document.getElementById("content");
+  const list = document.getElementById("list");
+
+  if (titleInput) titleInput.value = "";
+  if (contentInput) contentInput.value = "";
+  if (list) list.innerHTML = "";
+
   updateAppVisibility();
   showLoginCard();
 }
@@ -567,6 +612,7 @@ window.updateNote = updateNote;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindAuthToggleButtons();
+  bindSessionActivityTracking();
   updateAppVisibility();
 
   if (getAuthToken()) {

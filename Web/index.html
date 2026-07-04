@@ -112,7 +112,10 @@
               <p class="eyebrow no-margin">CrudNotes</p>
               <h2>My Notes</h2>
             </div>
-            <button class="ghost compact" type="button" onclick="loadNotes()">Refresh</button>
+            <div class="sidebar-actions">
+              <button class="ghost compact" type="button" onclick="loadNotes()">Refresh</button>
+              <button class="ghost compact logout-btn" type="button" onclick="signOut()">Logout</button>
+            </div>
           </div>
           <button class="primary new-note-btn" type="button" onclick="startNewNote()">+ New Note</button>
           <div id="list" class="note-title-list"></div>
