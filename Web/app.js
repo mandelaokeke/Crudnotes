@@ -125,6 +125,29 @@ function focusLogin() {
   setTimeout(() => document.getElementById("loginEmail")?.focus(), 250);
 }
 
+function bindAuthToggleButtons() {
+  document.querySelectorAll("[data-auth-mode]").forEach(button => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchAuthMode(button.dataset.authMode);
+    });
+  });
+
+  document.querySelectorAll(".login-link, #loginLink, #showLogin, #showLoginButton").forEach(button => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchAuthMode("login");
+    });
+  });
+
+  document.querySelectorAll(".signup-link, #signupLink, #showSignup, #showSignupButton").forEach(button => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchAuthMode("signup");
+    });
+  });
+}
+
 function openAuthModal() {
   const modal = document.getElementById("authModal");
   if (!modal) return;
@@ -417,6 +440,7 @@ window.showSignupCard = showSignupCard;
 window.showLoginCard = showLoginCard;
 window.scrollToSignup = scrollToSignup;
 window.focusLogin = focusLogin;
+window.bindAuthToggleButtons = bindAuthToggleButtons;
 window.openAuthModal = openAuthModal;
 window.closeAuthModal = closeAuthModal;
 window.switchAuthMode = switchAuthMode;
@@ -429,6 +453,9 @@ window.createNote = createNote;
 window.editNote = editNote;
 window.deleteNote = deleteNote;
 
-showSignupCard();
-updateAppVisibility();
-loadNotes();
+document.addEventListener("DOMContentLoaded", () => {
+  bindAuthToggleButtons();
+  showSignupCard();
+  updateAppVisibility();
+  loadNotes();
+});
