@@ -55,7 +55,8 @@ function setAuthStatus(message) {
 
 function setSignedInView(isSignedIn) {
   document.querySelectorAll(".app-only").forEach(el => {
-    el.style.display = isSignedIn ? "grid" : "none";
+    el.classList.toggle("visible", isSignedIn);
+    el.style.display = "";
   });
 }
 
