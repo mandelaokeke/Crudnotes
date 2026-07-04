@@ -11,7 +11,7 @@
   </head>
   <body>
     <main class="page">
-      <section class="hero">
+      <section class="hero auth-only" id="heroSection">
         <div class="hero-main">
           <div class="brand-row">
             <span class="brand-icon">▣</span>
@@ -105,26 +105,37 @@
         <p class="auth-switch-text">Need an account? <button type="button" class="auth-switch signup-link" data-auth-mode="signup" onclick="showSignupCard()">Sign up</button></p>
       </section>
 
-      <section class="layout app-only">
-        <div class="card">
-          <h2>Create Note</h2>
-          <p class="muted">Capture a quick idea, task, class note, or AWS learning checkpoint.</p>
-          <div class="field-grid">
-            <input id="title" placeholder="Note title" />
-            <textarea id="content" rows="4" placeholder="Write your note..."></textarea>
-            <button class="primary" onclick="createNote()">Create Note</button>
-          </div>
-        </div>
-
-        <section class="notes-shell">
-          <div class="section-head">
+      <section class="notes-workspace app-only" id="notesWorkspace">
+        <aside class="notes-sidebar">
+          <div class="sidebar-head">
             <div>
-              <h2>All Notes</h2>
-              <p class="muted">Only notes for the signed-in user are returned.</p>
+              <p class="eyebrow no-margin">CrudNotes</p>
+              <h2>My Notes</h2>
             </div>
-            <button class="ghost" onclick="loadNotes()">Refresh</button>
+            <button class="ghost compact" type="button" onclick="loadNotes()">Refresh</button>
           </div>
-          <div id="list" class="list"></div>
+          <button class="primary new-note-btn" type="button" onclick="startNewNote()">+ New Note</button>
+          <div id="list" class="note-title-list"></div>
+        </aside>
+
+        <section class="note-editor-panel">
+          <div class="editor-topbar">
+            <div>
+              <p class="eyebrow no-margin">Selected note</p>
+              <h2 id="editorHeading">Create Note</h2>
+            </div>
+            <div class="editor-actions">
+              <button class="ghost" type="button" onclick="startNewNote()">Clear</button>
+              <button class="primary" type="button" onclick="saveCurrentNote()">Save Note</button>
+            </div>
+          </div>
+
+          <input id="title" class="note-title-input" placeholder="Note title" />
+          <textarea id="content" class="note-content-input" placeholder="Write your note..."></textarea>
+
+          <article id="selectedNotePreview" class="selected-note-preview empty-state">
+            Select a note title from the left to preview it here.
+          </article>
         </section>
       </section>
     </main>

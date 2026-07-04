@@ -9,6 +9,8 @@ const poolData = {
 
 const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 let lastSignupEmail = "";
+let notesCache = [];
+let selectedNoteId = null;
 
 function getAuthToken() {
   return localStorage.getItem("crudnotes_id_token");
@@ -97,8 +99,11 @@ function updateAppVisibility() {
 
   setSignedInView(isSignedIn);
 
+  const heroSection = document.getElementById("heroSection");
   const signupSection = document.getElementById("signupSection");
   const loginSection = document.getElementById("loginSection");
+
+  if (heroSection) heroSection.style.display = isSignedIn ? "none" : "";
   if (signupSection) signupSection.style.display = isSignedIn ? "none" : "";
   if (loginSection) loginSection.style.display = "none";
 
@@ -107,6 +112,8 @@ function updateAppVisibility() {
     setAuthStatus(`Welcome back, ${displayName}. Your notes are private to your account.`);
   } else {
     setAuthStatus("Sign in to manage your notes.");
+    notesCache = [];
+    selectedNoteId = null;
     const list = document.getElementById("list");
     if (list) list.innerHTML = "";
     showSignupCard();
@@ -349,67 +356,163 @@ async function loadNotes() {
     return;
   }
 
+  const list = document.getElementById("list");
+  if (!list) return;
+
+  list.innerHTML = `<p class="muted sidebar-empty">Loading notes...</p>`;
+
   try {
     const notes = await apiFetch("/notes");
-    const list = document.getElementById("list");
-    list.innerHTML = "";
+    notesCache = Array.isArray(notes) ? notes : [];
 
-    if (!notes.length) {
-      list.innerHTML = `<p class="empty">No notes yet. Create your first note above.</p>`;
+    if (!notesCache.length) {
+      selectedNoteId = null;
+      list.innerHTML = `<p class="muted sidebar-empty">No notes yet. Create your first note.</p>`;
+      renderSelectedNote(null);
       return;
     }
 
-    notes.forEach(n => {
-      const div = document.createElement("div");
-      div.className = "note";
-      div.innerHTML = `
-        <strong>${escapeHtml(n.title || "")}</strong>
-        <p>${escapeHtml(n.content || "")}</p>
-        <div class="actions">
-          <button onclick="editNote('${n.noteId}', '${escapeForAttribute(n.title || "")}', '${escapeForAttribute(n.content || "")}')">Edit</button>
-          <button onclick="deleteNote('${n.noteId}')">Delete</button>
-        </div>
-      `;
-      list.appendChild(div);
-    });
+    if (!selectedNoteId || !notesCache.some(note => note.noteId === selectedNoteId)) {
+      selectedNoteId = notesCache[0].noteId;
+    }
+
+    renderNoteTitles();
+    renderSelectedNote(notesCache.find(note => note.noteId === selectedNoteId));
   } catch (err) {
-    alert(`Could not load notes: ${err.message}`);
+    list.innerHTML = `<p class="error">Could not load notes: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+function renderNoteTitles() {
+  const list = document.getElementById("list");
+  if (!list) return;
+
+  list.innerHTML = notesCache.map(note => {
+    const isActive = note.noteId === selectedNoteId ? "active" : "";
+    const title = escapeHtml(note.title || "Untitled note");
+    const preview = escapeHtml((note.content || "").split("\n").find(Boolean) || "No content yet");
+
+    return `
+      <button class="note-title-item ${isActive}" type="button" onclick="selectNote('${note.noteId}')">
+        <strong>${title}</strong>
+        <span>${preview}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function selectNote(noteId) {
+  selectedNoteId = noteId;
+  const note = notesCache.find(item => item.noteId === noteId);
+  renderNoteTitles();
+  renderSelectedNote(note);
+}
+
+function renderSelectedNote(note) {
+  const heading = document.getElementById("editorHeading");
+  const titleInput = document.getElementById("title");
+  const contentInput = document.getElementById("content");
+  const preview = document.getElementById("selectedNotePreview");
+
+  if (!note) {
+    if (heading) heading.textContent = "Create Note";
+    if (titleInput) titleInput.value = "";
+    if (contentInput) contentInput.value = "";
+    if (preview) {
+      preview.className = "selected-note-preview empty-state";
+      preview.textContent = "Select a note title from the left to preview it here.";
+    }
+    return;
+  }
+
+  if (heading) heading.textContent = "Edit Note";
+  if (titleInput) titleInput.value = note.title || "";
+  if (contentInput) contentInput.value = note.content || "";
+
+  if (preview) {
+    preview.className = "selected-note-preview";
+    preview.innerHTML = `
+      <h3>${escapeHtml(note.title || "Untitled note")}</h3>
+      <div class="note-body-formatted">${formatNoteContent(note.content || "")}</div>
+      <div class="note-preview-actions">
+        <button class="ghost" type="button" onclick="deleteNote('${note.noteId}')">Delete</button>
+      </div>
+    `;
+  }
+}
+
+function startNewNote() {
+  selectedNoteId = null;
+  renderNoteTitles();
+  renderSelectedNote(null);
+  setTimeout(() => document.getElementById("title")?.focus(), 100);
+}
+
+async function saveCurrentNote() {
+  if (selectedNoteId) {
+    await updateNote(selectedNoteId);
+  } else {
+    await createNote();
+  }
+}
+
+function formatNoteContent(content) {
+  const safeContent = escapeHtml(content || "");
+  if (!safeContent.trim()) return "<p>No content yet.</p>";
+
+  return safeContent
+    .replace(/\n{2,}/g, "</p><p>")
+    .replace(/\n/g, "<br>")
+    .replace(/^/, "<p>")
+    .replace(/$/, "</p>");
 }
 
 async function createNote() {
   const title = valueFrom("title");
-  const content = valueFrom("content");
-  if (!title) { alert("Title is required"); return; }
+  const content = document.getElementById("content")?.value || "";
+
+  if (!title) {
+    alert("Title is required");
+    return;
+  }
 
   try {
-    await apiFetch("/notes", {
+    const createdNote = await apiFetch("/notes", {
       method: "POST",
       body: JSON.stringify({ title, content })
     });
-    document.getElementById("title").value = "";
-    document.getElementById("content").value = "";
-    loadNotes();
+
+    selectedNoteId = createdNote?.noteId || null;
+    await loadNotes();
   } catch (err) {
     alert(`Could not create note: ${err.message}`);
   }
 }
 
-async function editNote(id, currentTitle = "", currentContent = "") {
-  const title = prompt("New title:", currentTitle);
-  if (title === null) return;
-  const content = prompt("New content:", currentContent);
-  if (content === null) return;
+async function updateNote(id) {
+  const title = valueFrom("title");
+  const content = document.getElementById("content")?.value || "";
+
+  if (!title) {
+    alert("Title is required");
+    return;
+  }
 
   try {
     await apiFetch(`/notes/${id}`, {
       method: "PUT",
-      body: JSON.stringify({ title: title.trim(), content: content.trim() })
+      body: JSON.stringify({ title, content })
     });
-    loadNotes();
+
+    selectedNoteId = id;
+    await loadNotes();
   } catch (err) {
     alert(`Could not update note: ${err.message}`);
   }
+}
+
+function editNote(id) {
+  selectNote(id);
 }
 
 async function deleteNote(id) {
@@ -417,7 +520,9 @@ async function deleteNote(id) {
 
   try {
     await apiFetch(`/notes/${id}`, { method: "DELETE" });
-    loadNotes();
+
+    if (selectedNoteId === id) selectedNoteId = null;
+    await loadNotes();
   } catch (err) {
     alert(`Could not delete note: ${err.message}`);
   }
@@ -427,10 +532,6 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, m => ({
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
   }[m]));
-}
-
-function escapeForAttribute(s) {
-  return escapeHtml(s).replace(/`/g, "&#96;");
 }
 
 window.showSignupCard = showSignupCard;
@@ -449,6 +550,10 @@ window.loadNotes = loadNotes;
 window.createNote = createNote;
 window.editNote = editNote;
 window.deleteNote = deleteNote;
+window.selectNote = selectNote;
+window.startNewNote = startNewNote;
+window.saveCurrentNote = saveCurrentNote;
+window.updateNote = updateNote;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindAuthToggleButtons();
