@@ -58,6 +58,11 @@ function setSignedInView(isSignedIn) {
     el.classList.toggle("visible", isSignedIn);
     el.style.display = "";
   });
+
+  document.querySelectorAll(".auth-only").forEach(el => {
+    el.classList.toggle("hidden", isSignedIn);
+    el.style.display = "";
+  });
 }
 
 function showSignupCard() {
@@ -100,23 +105,28 @@ function updateAppVisibility() {
 
   setSignedInView(isSignedIn);
 
-  const heroSection = document.getElementById("heroSection");
   const signupSection = document.getElementById("signupSection");
   const loginSection = document.getElementById("loginSection");
 
-  if (heroSection) heroSection.style.display = isSignedIn ? "none" : "";
-  if (signupSection) signupSection.style.display = isSignedIn ? "none" : "";
-  if (loginSection) loginSection.style.display = "none";
-
   if (isSignedIn) {
+    if (signupSection) signupSection.style.display = "none";
+    if (loginSection) loginSection.style.display = "none";
+
     const displayName = localStorage.getItem("crudnotes_display_name") || "there";
     setAuthStatus(`Welcome back, ${displayName}. Your notes are private to your account.`);
+    return;
+  }
+
+  setAuthStatus("Sign in to manage your notes.");
+  notesCache = [];
+  selectedNoteId = null;
+
+  const list = document.getElementById("list");
+  if (list) list.innerHTML = "";
+
+  if (loginSection?.classList.contains("active")) {
+    showLoginCard();
   } else {
-    setAuthStatus("Sign in to manage your notes.");
-    notesCache = [];
-    selectedNoteId = null;
-    const list = document.getElementById("list");
-    if (list) list.innerHTML = "";
     showSignupCard();
   }
 }
@@ -303,7 +313,6 @@ function signIn() {
       setAuthToken(idToken);
       localStorage.setItem("crudnotes_display_name", displayName);
       updateAppVisibility();
-      setSignedInView(true);
       loadNotes();
     },
     onFailure: (err) => {
@@ -558,7 +567,9 @@ window.updateNote = updateNote;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindAuthToggleButtons();
-  showSignupCard();
   updateAppVisibility();
-  loadNotes();
+
+  if (getAuthToken()) {
+    loadNotes();
+  }
 });
