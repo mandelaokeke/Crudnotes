@@ -109,7 +109,6 @@
         <aside class="notes-sidebar">
           <div class="sidebar-head">
             <div>
-              <p class="eyebrow no-margin">CrudNotes</p>
               <h2>My Notes</h2>
             </div>
             <div class="sidebar-actions">
@@ -124,7 +123,6 @@
         <section class="note-editor-panel">
           <div class="editor-topbar">
             <div>
-              <p class="eyebrow no-margin">Selected note</p>
               <h2 id="editorHeading">Create Note</h2>
             </div>
             <div class="editor-actions">
@@ -142,7 +140,7 @@
             <button type="button" class="format-btn" onclick="applyFormatting('bullet')" title="Bullet list">-</button>
             <button type="button" class="format-btn" onclick="applyFormatting('checklist')" title="Checklist">[]</button>
           </div>
-          <textarea id="content" class="note-content-input" placeholder="Write your note..."></textarea>
+          <div id="content" class="note-content-input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Write your note..."></div>
 
           <article id="selectedNotePreview" class="selected-note-preview empty-state">
             Select a note title from the left to preview it here.

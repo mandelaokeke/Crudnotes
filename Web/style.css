@@ -860,11 +860,65 @@ button:hover { transform: translateY(-1px); }
   line-height: 1.7;
   resize: none;
   overflow-y: auto;
+  outline: none;
+  white-space: normal;
 }
 
 .note-content-input:focus {
   outline: 2px solid rgba(124, 58, 237, 0.18);
   box-shadow: none;
+}
+
+.note-content-input:empty::before {
+  content: attr(data-placeholder);
+  color: #737373;
+  pointer-events: none;
+}
+
+.note-content-input h2,
+.note-content-input h3,
+.note-content-input h4 {
+  margin: 0.9rem 0 0.45rem;
+  color: #0f172a;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.note-content-input h2 {
+  font-size: 1.5rem;
+}
+
+.note-content-input h3 {
+  font-size: 1.32rem;
+}
+
+.note-content-input h4 {
+  font-size: 1.16rem;
+}
+
+.note-content-input p,
+.note-content-input div {
+  margin: 0 0 0.8rem;
+}
+
+.note-content-input ul {
+  margin: 0 0 1rem 1.2rem;
+  padding: 0;
+}
+
+.note-content-input li {
+  margin: 0.35rem 0;
+}
+
+.checklist-editor-line {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.checkmark-box {
+  color: #4f46e5;
+  font-weight: 900;
 }
 
 .selected-note-preview {

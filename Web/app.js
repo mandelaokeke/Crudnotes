@@ -18,6 +18,7 @@ let sessionTimeoutId = null;
 let autosaveTimerId = null;
 let saveStatusResetTimerId = null;
 let lastSavedSnapshot = { title: "", content: "" };
+let editorSelectionRange = null;
 
 function getAuthToken() {
   return localStorage.getItem("crudnotes_id_token");
@@ -33,10 +34,6 @@ function setAuthToken(token) {
 
 function valueFrom(id) {
   return document.getElementById(id)?.value?.trim() || "";
-}
-
-function rawValueFrom(id) {
-  return document.getElementById(id)?.value || "";
 }
 
 function getSignupEmail() {
@@ -386,7 +383,7 @@ function signOut() {
   const list = document.getElementById("list");
 
   if (titleInput) titleInput.value = "";
-  if (contentInput) contentInput.value = "";
+  if (contentInput) contentInput.innerHTML = "";
   if (list) list.innerHTML = "";
 
   updateAppVisibility();
@@ -472,7 +469,8 @@ function renderNoteTitles() {
     const noteId = inlineJsString(note.noteId);
     const noteIdAttribute = escapeHtml(note.noteId);
     const title = escapeHtml(note.title || "Untitled note");
-    const preview = escapeHtml((note.content || "").split("\n").find(Boolean) || "No content yet");
+    const previewText = plainTextFromHtml(note.content || "").split("\n").map(line => line.trim()).find(Boolean);
+    const preview = escapeHtml(previewText || "No content yet");
 
     return `
       <div class="note-swipe-row ${isActive}" data-note-id="${noteIdAttribute}">
@@ -510,7 +508,7 @@ function renderSelectedNote(note) {
     editorMode = "new";
     if (heading) heading.textContent = "Create Note";
     if (titleInput) titleInput.value = "";
-    if (contentInput) contentInput.value = "";
+    if (contentInput) contentInput.innerHTML = "";
     setEditorFieldsVisible(true);
     renderEditorActions("new");
     updateSavedSnapshot();
@@ -525,7 +523,7 @@ function renderSelectedNote(note) {
   if (editorMode === "edit") {
     if (heading) heading.textContent = "Edit Note";
     if (titleInput) titleInput.value = note.title || "";
-    if (contentInput) contentInput.value = note.content || "";
+    if (contentInput) contentInput.innerHTML = contentForEditor(note.content || "");
     setEditorFieldsVisible(true);
     renderEditorActions("edit");
     updateSavedSnapshot();
@@ -561,8 +559,13 @@ function setEditorFieldsVisible(isVisible) {
   [titleInput, contentInput].forEach(field => {
     if (!field) return;
     field.classList.toggle("hidden-preview", !isVisible);
-    field.disabled = !isVisible;
   });
+
+  if (titleInput) titleInput.disabled = !isVisible;
+  if (contentInput) {
+    contentInput.setAttribute("contenteditable", String(isVisible));
+    contentInput.setAttribute("aria-disabled", String(!isVisible));
+  }
 
   if (toolbar) toolbar.classList.toggle("hidden-preview", !isVisible);
 }
@@ -606,7 +609,7 @@ async function saveCurrentNote(options = {}) {
 }
 
 function formatNoteContent(content) {
-  return renderMarkdownContent(content);
+  return looksLikeHtml(content) ? sanitizeRichContent(content) : renderMarkdownContent(content);
 }
 
 async function createNote({ silent = false } = {}) {
@@ -691,21 +694,23 @@ async function updateNote(id, { silent = false } = {}) {
 function getEditorDraft() {
   return {
     title: valueFrom("title"),
-    content: rawValueFrom("content")
+    content: getEditorContent()
   };
 }
 
 function hasDraftContent(draft = getEditorDraft()) {
-  return Boolean(draft.title.trim() || draft.content.trim());
+  return Boolean(draft.title.trim() || plainTextFromHtml(draft.content).trim());
 }
 
 function deriveNoteTitle(draft = getEditorDraft()) {
   if (draft.title.trim()) return draft.title.trim();
 
   const firstContentLine = draft.content
+    ? plainTextFromHtml(draft.content)
     .split("\n")
     .map(line => line.trim())
-    .find(Boolean);
+    .find(Boolean)
+    : "";
 
   if (!firstContentLine) return "Untitled note";
 
@@ -716,6 +721,77 @@ function deriveNoteTitle(draft = getEditorDraft()) {
     .replace(/[*_`~>#]/g, "")
     .slice(0, 70)
     .trim() || "Untitled note";
+}
+
+function getEditorContent() {
+  const contentInput = document.getElementById("content");
+  if (!contentInput) return "";
+  return sanitizeRichContent(contentInput.innerHTML);
+}
+
+function contentForEditor(content) {
+  if (!content.trim()) return "";
+  return looksLikeHtml(content) ? sanitizeRichContent(content) : renderMarkdownContent(content);
+}
+
+function looksLikeHtml(content) {
+  return /<\/?[a-z][\s\S]*>/i.test(content || "");
+}
+
+function plainTextFromHtml(content) {
+  const temp = document.createElement("div");
+  const html = looksLikeHtml(content) ? sanitizeRichContent(content) : renderMarkdownContent(content || "");
+  temp.innerHTML = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(div|p|li|h[1-6])>/gi, "$&\n");
+  return temp.textContent || "";
+}
+
+function sanitizeRichContent(content) {
+  const template = document.createElement("template");
+  template.innerHTML = content || "";
+
+  const allowedTags = new Set(["B", "BR", "DIV", "EM", "H2", "H3", "H4", "I", "LI", "P", "SPAN", "STRONG", "U", "UL"]);
+  const allowedClasses = new Set(["checklist-editor-line", "checklist-render", "checkmark-box"]);
+
+  const sanitizeNode = node => {
+    if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent || "");
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return document.createTextNode("");
+
+    const tagName = node.tagName.toUpperCase();
+    const replacementTag = allowedTags.has(tagName) ? tagName.toLowerCase() : "span";
+    const cleanNode = document.createElement(replacementTag);
+
+    const classNames = Array.from(node.classList || []).filter(className => allowedClasses.has(className));
+    if (classNames.length) cleanNode.className = classNames.join(" ");
+
+    Array.from(node.childNodes).forEach(child => {
+      cleanNode.appendChild(sanitizeNode(child));
+    });
+
+    return cleanNode;
+  };
+
+  const cleanContainer = document.createElement("div");
+  Array.from(template.content.childNodes).forEach(node => {
+    cleanContainer.appendChild(sanitizeNode(node));
+  });
+
+  let sanitized = cleanContainer.innerHTML
+    .replace(/<div><br><\/div>/g, "")
+    .replace(/<p><br><\/p>/g, "")
+    .replace(/^<br\s*\/?>$/i, "")
+    .trim();
+
+  if (plainTextOnly(sanitized).trim()) return sanitized;
+  return "";
+}
+
+function plainTextOnly(content) {
+  const temp = document.createElement("div");
+  temp.innerHTML = content || "";
+  return temp.textContent || "";
 }
 
 function updateSavedSnapshot(snapshot = getEditorDraft()) {
@@ -795,72 +871,28 @@ function upsertCachedNote(note) {
 
 function applyFormatting(type) {
   const contentInput = document.getElementById("content");
-  if (!contentInput || contentInput.disabled) return;
+  if (!contentInput || contentInput.getAttribute("contenteditable") !== "true") return;
 
   contentInput.focus();
-  const start = contentInput.selectionStart || 0;
-  const end = contentInput.selectionEnd || 0;
-  const selected = contentInput.value.slice(start, end);
-  let replacement = selected;
-  let cursorStart = start;
-  let cursorEnd = end;
+  restoreEditorSelection();
+  document.execCommand("styleWithCSS", false, false);
 
   if (type === "bold") {
-    replacement = wrapSelection(selected, "**", "bold text");
-    cursorStart = start + 2;
-    cursorEnd = start + replacement.length - 2;
+    document.execCommand("bold");
   } else if (type === "italic") {
-    replacement = wrapSelection(selected, "_", "italic text");
-    cursorStart = start + 1;
-    cursorEnd = start + replacement.length - 1;
+    document.execCommand("italic");
   } else if (type === "underline") {
-    replacement = wrapSelection(selected, "<u>", "underlined text", "</u>");
-    cursorStart = start + 3;
-    cursorEnd = start + replacement.length - 4;
+    document.execCommand("underline");
   } else if (type === "heading") {
-    const lineInfo = currentLineRange(contentInput.value, start, end);
-    replacement = prefixLines(contentInput.value.slice(lineInfo.start, lineInfo.end), "## ");
-    contentInput.setRangeText(replacement, lineInfo.start, lineInfo.end, "select");
-    contentInput.dispatchEvent(new Event("input", { bubbles: true }));
-    return;
+    document.execCommand("formatBlock", false, "h2");
   } else if (type === "bullet") {
-    const lineInfo = currentLineRange(contentInput.value, start, end);
-    replacement = prefixLines(contentInput.value.slice(lineInfo.start, lineInfo.end), "- ");
-    contentInput.setRangeText(replacement, lineInfo.start, lineInfo.end, "select");
-    contentInput.dispatchEvent(new Event("input", { bubbles: true }));
-    return;
+    document.execCommand("insertUnorderedList");
   } else if (type === "checklist") {
-    const lineInfo = currentLineRange(contentInput.value, start, end);
-    replacement = prefixLines(contentInput.value.slice(lineInfo.start, lineInfo.end), "- [ ] ");
-    contentInput.setRangeText(replacement, lineInfo.start, lineInfo.end, "select");
-    contentInput.dispatchEvent(new Event("input", { bubbles: true }));
-    return;
+    document.execCommand("insertHTML", false, '<div class="checklist-editor-line"><span class="checkmark-box">☐</span> Checklist item</div>');
   }
 
-  contentInput.setRangeText(replacement, start, end, "end");
-  contentInput.setSelectionRange(cursorStart, cursorEnd);
+  saveEditorSelection();
   contentInput.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function wrapSelection(selected, prefix, fallback, suffix = prefix) {
-  return `${prefix}${selected || fallback}${suffix}`;
-}
-
-function currentLineRange(value, selectionStart, selectionEnd) {
-  const lineStart = value.lastIndexOf("\n", Math.max(0, selectionStart - 1)) + 1;
-  const nextBreak = value.indexOf("\n", selectionEnd);
-
-  return {
-    start: lineStart,
-    end: nextBreak === -1 ? value.length : nextBreak
-  };
-}
-
-function prefixLines(value, prefix) {
-  return value
-    .split("\n")
-    .map(line => line.trim().startsWith(prefix.trim()) ? line : `${prefix}${line}`)
-    .join("\n");
 }
 
 function renderMarkdownContent(content) {
@@ -931,8 +963,21 @@ function formatInlineMarkdown(value) {
 }
 
 function bindEditorEnhancements() {
-  ["title", "content"].forEach(id => {
-    document.getElementById(id)?.addEventListener("input", scheduleAutosave);
+  document.getElementById("title")?.addEventListener("input", scheduleAutosave);
+
+  const editor = document.getElementById("content");
+  if (editor) {
+    editor.addEventListener("input", () => {
+      saveEditorSelection();
+      scheduleAutosave();
+    });
+    ["keyup", "mouseup", "focus"].forEach(eventName => {
+      editor.addEventListener(eventName, saveEditorSelection);
+    });
+  }
+
+  document.getElementById("formatToolbar")?.addEventListener("mousedown", event => {
+    event.preventDefault();
   });
 
   window.addEventListener("keydown", event => {
@@ -959,6 +1004,35 @@ function bindEditorEnhancements() {
       applyFormatting("underline");
     }
   });
+}
+
+function saveEditorSelection() {
+  const editor = document.getElementById("content");
+  const selection = window.getSelection();
+  if (!editor || !selection || !selection.rangeCount) return;
+
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return;
+
+  editorSelectionRange = range.cloneRange();
+}
+
+function restoreEditorSelection() {
+  const editor = document.getElementById("content");
+  const selection = window.getSelection();
+  if (!editor || !selection) return;
+
+  selection.removeAllRanges();
+
+  if (editorSelectionRange && editor.contains(editorSelectionRange.commonAncestorContainer)) {
+    selection.addRange(editorSelectionRange);
+    return;
+  }
+
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  selection.addRange(range);
 }
 
 function editNote(id) {
