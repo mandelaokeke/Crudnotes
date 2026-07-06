@@ -12,6 +12,7 @@ let lastSignupEmail = "";
 let notesCache = [];
 let selectedNoteId = null;
 let editorMode = "new";
+let noteSearchQuery = "";
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 const AUTOSAVE_DELAY_MS = 1200;
 let sessionTimeoutId = null;
@@ -159,10 +160,13 @@ function updateAppVisibility() {
   notesCache = [];
   selectedNoteId = null;
   editorMode = "new";
+  noteSearchQuery = "";
   updateSavedSnapshot();
 
   const list = document.getElementById("list");
+  const search = document.getElementById("noteSearch");
   if (list) list.innerHTML = "";
+  if (search) search.value = "";
 
   if (loginSection?.classList.contains("active")) {
     showLoginCard();
@@ -464,22 +468,35 @@ function renderNoteTitles() {
   const list = document.getElementById("list");
   if (!list) return;
 
-  list.innerHTML = notesCache.map(note => {
+  const visibleNotes = getVisibleNotes();
+
+  if (!visibleNotes.length) {
+    list.innerHTML = `<p class="muted sidebar-empty">${notesCache.length ? "No notes match your search." : "No notes yet. Create your first note."}</p>`;
+    return;
+  }
+
+  list.innerHTML = visibleNotes.map(note => {
     const isActive = note.noteId === selectedNoteId ? "active" : "";
     const noteId = inlineJsString(note.noteId);
     const noteIdAttribute = escapeHtml(note.noteId);
     const title = escapeHtml(note.title || "Untitled note");
     const previewText = plainTextFromHtml(note.content || "").split("\n").map(line => line.trim()).find(Boolean);
     const preview = escapeHtml(previewText || "No content yet");
+    const timestamp = escapeHtml(formatNoteTimestamp(note.updatedAt || note.createdAt));
+    const pinLabel = note.pinned ? "Unpin" : "Pin";
 
     return `
       <div class="note-swipe-row ${isActive}" data-note-id="${noteIdAttribute}">
         <div class="note-swipe-actions" aria-label="Note actions">
+          <button class="note-swipe-action pin" type="button" onclick="togglePinnedNote('${noteId}')">${pinLabel}</button>
           <button class="note-swipe-action edit" type="button" onclick="editNote('${noteId}')">Edit</button>
           <button class="note-swipe-action delete" type="button" onclick="deleteNote('${noteId}')">Delete</button>
         </div>
         <button class="note-title-item ${isActive}" type="button" onclick="selectNote('${noteId}')">
-          <strong>${title}</strong>
+          <span class="note-title-row">
+            <strong>${note.pinned ? "★ " : ""}${title}</strong>
+            <time>${timestamp}</time>
+          </span>
           <span>${preview}</span>
         </button>
       </div>
@@ -487,6 +504,25 @@ function renderNoteTitles() {
   }).join("");
 
   bindMobileSwipeActions();
+}
+
+function getVisibleNotes() {
+  const query = noteSearchQuery.trim().toLowerCase();
+
+  return [...notesCache]
+    .filter(note => {
+      if (!query) return true;
+      const haystack = `${note.title || ""} ${plainTextFromHtml(note.content || "")}`.toLowerCase();
+      return haystack.includes(query);
+    })
+    .sort((a, b) => {
+      if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+      return noteTimeValue(b) - noteTimeValue(a);
+    });
+}
+
+function noteTimeValue(note) {
+  return Date.parse(note.updatedAt || note.createdAt || "") || 0;
 }
 
 function selectNote(noteId) {
@@ -546,6 +582,7 @@ function renderSelectedNote(note) {
     preview.className = "selected-note-preview selected-note-view";
     preview.innerHTML = `
       <h3>${escapeHtml(note.title || "Untitled note")}</h3>
+      <p class="selected-note-meta">${note.pinned ? "Pinned • " : ""}${escapeHtml(formatNoteTimestamp(note.updatedAt || note.createdAt))}</p>
       <div class="note-body-formatted">${formatNoteContent(note.content || "")}</div>
     `;
   }
@@ -576,7 +613,10 @@ function renderEditorActions(mode, noteId = selectedNoteId) {
 
   if (mode === "view" && noteId) {
     const safeNoteId = inlineJsString(noteId);
+    const note = notesCache.find(item => item.noteId === noteId);
+    const pinLabel = note?.pinned ? "Unpin" : "Pin";
     actions.innerHTML = `
+      <button class="ghost" type="button" onclick="togglePinnedNote('${safeNoteId}')">${pinLabel}</button>
       <button class="ghost" type="button" onclick="editNote('${safeNoteId}')">Edit</button>
       <button class="ghost danger-btn" type="button" onclick="deleteNote('${safeNoteId}')">Delete</button>
     `;
@@ -634,7 +674,7 @@ async function createNote({ silent = false } = {}) {
     setSaveStatus("Saving...");
     const createdNote = await apiFetch("/notes", {
       method: "POST",
-      body: JSON.stringify({ title, content })
+      body: JSON.stringify({ title, content, pinned: false })
     });
 
     selectedNoteId = createdNote?.noteId || selectedNoteId;
@@ -869,6 +909,67 @@ function upsertCachedNote(note) {
   }
 }
 
+async function togglePinnedNote(id) {
+  closeSwipeActions();
+  const note = notesCache.find(item => item.noteId === id);
+  if (!note) return;
+
+  const nextPinned = !note.pinned;
+  const previousNote = { ...note };
+
+  upsertCachedNote({ ...note, pinned: nextPinned });
+  renderNoteTitles();
+
+  if (selectedNoteId === id && editorMode === "view") {
+    renderSelectedNote(notesCache.find(item => item.noteId === id));
+  }
+
+  try {
+    const updatedNote = await apiFetch(`/notes/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ pinned: nextPinned })
+    });
+
+    upsertCachedNote({ ...note, ...updatedNote, pinned: nextPinned });
+    renderNoteTitles();
+    if (selectedNoteId === id && editorMode === "view") {
+      renderSelectedNote(notesCache.find(item => item.noteId === id));
+    }
+  } catch (err) {
+    upsertCachedNote(previousNote);
+    renderNoteTitles();
+    alert(`Could not update pinned note: ${err.message}`);
+  }
+}
+
+function formatNoteTimestamp(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const today = startOfDay(now);
+  const target = startOfDay(date);
+  const dayDiff = Math.round((today - target) / 86400000);
+
+  if (dayDiff === 0) {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  if (dayDiff === 1) return "Yesterday";
+
+  const options = date.getFullYear() === now.getFullYear()
+    ? { month: "short", day: "numeric" }
+    : { month: "short", day: "numeric", year: "numeric" };
+
+  return date.toLocaleDateString([], options);
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 function applyFormatting(type) {
   const contentInput = document.getElementById("content");
   if (!contentInput || contentInput.getAttribute("contenteditable") !== "true") return;
@@ -1004,6 +1105,39 @@ function bindEditorEnhancements() {
       applyFormatting("underline");
     }
   });
+}
+
+function bindSidebarControls() {
+  const search = document.getElementById("noteSearch");
+  if (search) {
+    search.addEventListener("input", () => {
+      noteSearchQuery = search.value;
+      renderNoteTitles();
+    });
+  }
+}
+
+function initializeTheme() {
+  const savedTheme = localStorage.getItem("crudnotes_theme");
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  setTheme(savedTheme || (prefersDark ? "dark" : "light"));
+}
+
+function toggleTheme() {
+  const isDark = document.body.classList.contains("dark-mode");
+  setTheme(isDark ? "light" : "dark");
+}
+
+function setTheme(theme) {
+  const isDark = theme === "dark";
+  document.body.classList.toggle("dark-mode", isDark);
+  localStorage.setItem("crudnotes_theme", isDark ? "dark" : "light");
+
+  const toggle = document.getElementById("themeToggle");
+  if (toggle) {
+    toggle.textContent = isDark ? "Light" : "Dark";
+    toggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+  }
 }
 
 function saveEditorSelection() {
@@ -1162,11 +1296,15 @@ window.startNewNote = startNewNote;
 window.saveCurrentNote = saveCurrentNote;
 window.updateNote = updateNote;
 window.applyFormatting = applyFormatting;
+window.togglePinnedNote = togglePinnedNote;
+window.toggleTheme = toggleTheme;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindAuthToggleButtons();
   bindSessionActivityTracking();
   bindEditorEnhancements();
+  bindSidebarControls();
+  initializeTheme();
   updateAppVisibility();
 
   if (getAuthToken()) {

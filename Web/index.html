@@ -112,11 +112,15 @@
               <h2>My Notes</h2>
             </div>
             <div class="sidebar-actions">
+              <button id="themeToggle" class="ghost compact theme-toggle" type="button" onclick="toggleTheme()" aria-label="Toggle dark mode">Dark</button>
               <button class="ghost compact" type="button" onclick="loadNotes()">Refresh</button>
               <button class="ghost compact logout-btn" type="button" onclick="signOut()">Logout</button>
             </div>
           </div>
           <button class="primary new-note-btn" type="button" onclick="startNewNote()">+ New Note</button>
+          <div class="search-wrap">
+            <input id="noteSearch" class="note-search" type="search" placeholder="Search notes" autocomplete="off" />
+          </div>
           <div id="list" class="note-title-list"></div>
         </aside>
 

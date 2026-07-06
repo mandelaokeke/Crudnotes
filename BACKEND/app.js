@@ -41,6 +41,7 @@ function noteFromItem(item) {
     noteId: item.noteId.S,
     title: item.title?.S || "",
     content: item.content?.S || "",
+    pinned: item.pinned?.BOOL || false,
     createdAt: item.createdAt?.S || "",
     updatedAt: item.updatedAt?.S || ""
   };
@@ -95,6 +96,7 @@ exports.handler = async (event) => {
         noteId: { S: noteId },
         title: { S: body.title },
         content: { S: body.content || "" },
+        pinned: { BOOL: Boolean(body.pinned) },
         createdAt: { S: now },
         updatedAt: { S: now }
       };
@@ -108,6 +110,7 @@ exports.handler = async (event) => {
         noteId,
         title: body.title,
         content: body.content || "",
+        pinned: Boolean(body.pinned),
         createdAt: now,
         updatedAt: now
       });
@@ -120,25 +123,36 @@ exports.handler = async (event) => {
       const expr = [];
       const names = {};
       const values = {};
+      let contentChanged = false;
 
       if (typeof body.title === "string") {
         expr.push("#t = :t");
         names["#t"] = "title";
         values[":t"] = { S: body.title };
+        contentChanged = true;
       }
 
       if (typeof body.content === "string") {
         expr.push("#c = :c");
         names["#c"] = "content";
         values[":c"] = { S: body.content };
+        contentChanged = true;
+      }
+
+      if (typeof body.pinned === "boolean") {
+        expr.push("#p = :p");
+        names["#p"] = "pinned";
+        values[":p"] = { BOOL: body.pinned };
       }
 
       if (!expr.length) return json(400, { message: "nothing to update" });
 
-      const now = new Date().toISOString();
-      expr.push("#u = :u");
-      names["#u"] = "updatedAt";
-      values[":u"] = { S: now };
+      const now = contentChanged ? new Date().toISOString() : null;
+      if (contentChanged) {
+        expr.push("#u = :u");
+        names["#u"] = "updatedAt";
+        values[":u"] = { S: now };
+      }
 
       await ddb.send(new UpdateItemCommand({
         TableName: TABLE_NAME,
@@ -156,7 +170,8 @@ exports.handler = async (event) => {
         noteId,
         ...(typeof body.title === "string" ? { title: body.title } : {}),
         ...(typeof body.content === "string" ? { content: body.content } : {}),
-        updatedAt: now
+        ...(typeof body.pinned === "boolean" ? { pinned: body.pinned } : {}),
+        ...(now ? { updatedAt: now } : {})
       });
     }
 
