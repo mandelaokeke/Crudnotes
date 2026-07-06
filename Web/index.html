@@ -129,11 +129,19 @@
             </div>
             <div class="editor-actions">
               <button class="ghost" type="button" onclick="startNewNote()">Clear</button>
-              <button class="primary" type="button" onclick="saveCurrentNote()">Save Note</button>
+              <span id="saveStatus" class="save-status">Saved just now</span>
             </div>
           </div>
 
           <input id="title" class="note-title-input" placeholder="Note title" />
+          <div id="formatToolbar" class="format-toolbar" aria-label="Formatting tools">
+            <button type="button" class="format-btn" onclick="applyFormatting('bold')" title="Bold">B</button>
+            <button type="button" class="format-btn italic" onclick="applyFormatting('italic')" title="Italic">I</button>
+            <button type="button" class="format-btn underline" onclick="applyFormatting('underline')" title="Underline">U</button>
+            <button type="button" class="format-btn" onclick="applyFormatting('heading')" title="Heading">H</button>
+            <button type="button" class="format-btn" onclick="applyFormatting('bullet')" title="Bullet list">-</button>
+            <button type="button" class="format-btn" onclick="applyFormatting('checklist')" title="Checklist">[]</button>
+          </div>
           <textarea id="content" class="note-content-input" placeholder="Write your note..."></textarea>
 
           <article id="selectedNotePreview" class="selected-note-preview empty-state">

@@ -13,7 +13,11 @@ let notesCache = [];
 let selectedNoteId = null;
 let editorMode = "new";
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+const AUTOSAVE_DELAY_MS = 1200;
 let sessionTimeoutId = null;
+let autosaveTimerId = null;
+let saveStatusResetTimerId = null;
+let lastSavedSnapshot = { title: "", content: "" };
 
 function getAuthToken() {
   return localStorage.getItem("crudnotes_id_token");
@@ -29,6 +33,10 @@ function setAuthToken(token) {
 
 function valueFrom(id) {
   return document.getElementById(id)?.value?.trim() || "";
+}
+
+function rawValueFrom(id) {
+  return document.getElementById(id)?.value || "";
 }
 
 function getSignupEmail() {
@@ -150,9 +158,11 @@ function updateAppVisibility() {
 
   setAuthStatus("Sign in to manage your notes.");
   stopSessionTimeout();
+  clearAutosaveTimer();
   notesCache = [];
   selectedNoteId = null;
   editorMode = "new";
+  updateSavedSnapshot();
 
   const list = document.getElementById("list");
   if (list) list.innerHTML = "";
@@ -347,6 +357,7 @@ function signIn() {
       localStorage.setItem("crudnotes_display_name", displayName);
       selectedNoteId = null;
       editorMode = "new";
+      updateSavedSnapshot();
       updateAppVisibility();
       loadNotes();
     },
@@ -367,6 +378,8 @@ function signOut() {
   notesCache = [];
   selectedNoteId = null;
   editorMode = "new";
+  clearAutosaveTimer();
+  updateSavedSnapshot();
 
   const titleInput = document.getElementById("title");
   const contentInput = document.getElementById("content");
@@ -500,6 +513,8 @@ function renderSelectedNote(note) {
     if (contentInput) contentInput.value = "";
     setEditorFieldsVisible(true);
     renderEditorActions("new");
+    updateSavedSnapshot();
+    setSaveStatus("Start typing");
     if (preview) {
       preview.className = "selected-note-preview empty-state hidden-preview";
       preview.textContent = "";
@@ -513,6 +528,8 @@ function renderSelectedNote(note) {
     if (contentInput) contentInput.value = note.content || "";
     setEditorFieldsVisible(true);
     renderEditorActions("edit");
+    updateSavedSnapshot();
+    setSaveStatus("Saved just now");
     if (preview) {
       preview.className = "selected-note-preview hidden-preview";
       preview.textContent = "";
@@ -524,6 +541,8 @@ function renderSelectedNote(note) {
   if (heading) heading.textContent = "Selected Note";
   setEditorFieldsVisible(false);
   renderEditorActions("view", note.noteId);
+  updateSavedSnapshot({ title: note.title || "", content: note.content || "" });
+  setSaveStatus("Saved just now");
 
   if (preview) {
     preview.className = "selected-note-preview selected-note-view";
@@ -537,12 +556,15 @@ function renderSelectedNote(note) {
 function setEditorFieldsVisible(isVisible) {
   const titleInput = document.getElementById("title");
   const contentInput = document.getElementById("content");
+  const toolbar = document.getElementById("formatToolbar");
 
   [titleInput, contentInput].forEach(field => {
     if (!field) return;
     field.classList.toggle("hidden-preview", !isVisible);
     field.disabled = !isVisible;
   });
+
+  if (toolbar) toolbar.classList.toggle("hidden-preview", !isVisible);
 }
 
 function renderEditorActions(mode, noteId = selectedNoteId) {
@@ -560,12 +582,13 @@ function renderEditorActions(mode, noteId = selectedNoteId) {
 
   actions.innerHTML = `
     <button class="ghost" type="button" onclick="startNewNote()">Clear</button>
-    <button class="primary" type="button" onclick="saveCurrentNote()">Save Note</button>
+    <span id="saveStatus" class="save-status">Saved just now</span>
   `;
 }
 
 function startNewNote() {
   closeSwipeActions();
+  clearAutosaveTimer();
   selectedNoteId = null;
   editorMode = "new";
   renderNoteTitles();
@@ -573,69 +596,369 @@ function startNewNote() {
   setTimeout(() => document.getElementById("title")?.focus(), 100);
 }
 
-async function saveCurrentNote() {
+async function saveCurrentNote(options = {}) {
+  clearAutosaveTimer();
   if (selectedNoteId) {
-    await updateNote(selectedNoteId);
+    await updateNote(selectedNoteId, options);
   } else {
-    await createNote();
+    await createNote(options);
   }
 }
 
 function formatNoteContent(content) {
-  const safeContent = escapeHtml(content || "");
-  if (!safeContent.trim()) return "<p>No content yet.</p>";
-
-  return safeContent
-    .replace(/\n{2,}/g, "</p><p>")
-    .replace(/\n/g, "<br>")
-    .replace(/^/, "<p>")
-    .replace(/$/, "</p>");
+  return renderMarkdownContent(content);
 }
 
-async function createNote() {
-  const title = valueFrom("title");
-  const content = document.getElementById("content")?.value || "";
+async function createNote({ silent = false } = {}) {
+  const draft = getEditorDraft();
+  const title = deriveNoteTitle(draft);
+  const content = draft.content;
 
-  if (!title) {
-    alert("Title is required");
+  if (!hasDraftContent(draft)) {
+    setSaveStatus("Nothing to save");
+    if (!silent) {
+      alert("Add a title or note content first.");
+    }
+    return;
+  }
+
+  if (!getAuthToken()) {
+    if (!silent) alert("Please sign in first.");
     return;
   }
 
   try {
+    setSaveStatus("Saving...");
     const createdNote = await apiFetch("/notes", {
       method: "POST",
       body: JSON.stringify({ title, content })
     });
 
-    selectedNoteId = createdNote?.noteId || null;
-    editorMode = selectedNoteId ? "view" : "new";
-    await loadNotes();
+    selectedNoteId = createdNote?.noteId || selectedNoteId;
+    editorMode = selectedNoteId ? "edit" : "new";
+    upsertCachedNote({
+      ...(createdNote || {}),
+      noteId: selectedNoteId,
+      title,
+      content
+    });
+    renderNoteTitles();
+    updateSavedSnapshot({ title, content });
+    setSaveStatus("Saved just now");
   } catch (err) {
-    alert(`Could not create note: ${err.message}`);
+    setSaveStatus("Could not save");
+    if (!silent) alert(`Could not create note: ${err.message}`);
   }
 }
 
-async function updateNote(id) {
-  const title = valueFrom("title");
-  const content = document.getElementById("content")?.value || "";
+async function updateNote(id, { silent = false } = {}) {
+  const draft = getEditorDraft();
+  const title = deriveNoteTitle(draft);
+  const content = draft.content;
 
-  if (!title) {
-    alert("Title is required");
+  if (!hasDraftContent(draft)) {
+    setSaveStatus("Nothing to save");
+    if (!silent) {
+      alert("Add a title or note content first.");
+    }
+    return;
+  }
+
+  if (!getAuthToken()) {
+    if (!silent) alert("Please sign in first.");
     return;
   }
 
   try {
+    setSaveStatus("Saving...");
     await apiFetch(`/notes/${id}`, {
       method: "PUT",
       body: JSON.stringify({ title, content })
     });
 
     selectedNoteId = id;
-    editorMode = "view";
-    await loadNotes();
+    editorMode = "edit";
+    upsertCachedNote({ noteId: id, title, content });
+    renderNoteTitles();
+    updateSavedSnapshot({ title, content });
+    setSaveStatus("Saved just now");
   } catch (err) {
-    alert(`Could not update note: ${err.message}`);
+    setSaveStatus("Could not save");
+    if (!silent) alert(`Could not update note: ${err.message}`);
   }
+}
+
+function getEditorDraft() {
+  return {
+    title: valueFrom("title"),
+    content: rawValueFrom("content")
+  };
+}
+
+function hasDraftContent(draft = getEditorDraft()) {
+  return Boolean(draft.title.trim() || draft.content.trim());
+}
+
+function deriveNoteTitle(draft = getEditorDraft()) {
+  if (draft.title.trim()) return draft.title.trim();
+
+  const firstContentLine = draft.content
+    .split("\n")
+    .map(line => line.trim())
+    .find(Boolean);
+
+  if (!firstContentLine) return "Untitled note";
+
+  return firstContentLine
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^[-*]\s+\[[ xX]\]\s+/, "")
+    .replace(/^[-*]\s+/, "")
+    .replace(/[*_`~>#]/g, "")
+    .slice(0, 70)
+    .trim() || "Untitled note";
+}
+
+function updateSavedSnapshot(snapshot = getEditorDraft()) {
+  lastSavedSnapshot = {
+    title: snapshot.title || "",
+    content: snapshot.content || ""
+  };
+}
+
+function hasUnsavedChanges() {
+  const draft = getEditorDraft();
+  return draft.title !== lastSavedSnapshot.title || draft.content !== lastSavedSnapshot.content;
+}
+
+function clearAutosaveTimer() {
+  if (autosaveTimerId) {
+    clearTimeout(autosaveTimerId);
+    autosaveTimerId = null;
+  }
+}
+
+function setSaveStatus(message) {
+  const status = document.getElementById("saveStatus");
+  if (!status) return;
+
+  status.textContent = message;
+  status.dataset.state = message.toLowerCase().includes("could not") ? "error" : "";
+
+  if (saveStatusResetTimerId) {
+    clearTimeout(saveStatusResetTimerId);
+    saveStatusResetTimerId = null;
+  }
+
+  if (message === "Saved just now") {
+    saveStatusResetTimerId = setTimeout(() => {
+      const currentStatus = document.getElementById("saveStatus");
+      if (currentStatus?.textContent === "Saved just now") currentStatus.textContent = "Saved";
+    }, 4000);
+  }
+}
+
+function scheduleAutosave() {
+  if (editorMode === "view") return;
+  clearAutosaveTimer();
+
+  if (!hasUnsavedChanges()) {
+    setSaveStatus(hasDraftContent() ? "Saved" : "Start typing");
+    return;
+  }
+
+  if (!hasDraftContent()) {
+    setSaveStatus("Start typing");
+    return;
+  }
+
+  setSaveStatus("Unsaved changes");
+  autosaveTimerId = setTimeout(() => {
+    saveCurrentNote({ silent: true });
+  }, AUTOSAVE_DELAY_MS);
+}
+
+function upsertCachedNote(note) {
+  if (!note?.noteId) return;
+
+  const existingIndex = notesCache.findIndex(item => item.noteId === note.noteId);
+  const nextNote = {
+    ...(existingIndex >= 0 ? notesCache[existingIndex] : {}),
+    ...note
+  };
+
+  if (existingIndex >= 0) {
+    notesCache[existingIndex] = nextNote;
+  } else {
+    notesCache = [nextNote, ...notesCache];
+  }
+}
+
+function applyFormatting(type) {
+  const contentInput = document.getElementById("content");
+  if (!contentInput || contentInput.disabled) return;
+
+  contentInput.focus();
+  const start = contentInput.selectionStart || 0;
+  const end = contentInput.selectionEnd || 0;
+  const selected = contentInput.value.slice(start, end);
+  let replacement = selected;
+  let cursorStart = start;
+  let cursorEnd = end;
+
+  if (type === "bold") {
+    replacement = wrapSelection(selected, "**", "bold text");
+    cursorStart = start + 2;
+    cursorEnd = start + replacement.length - 2;
+  } else if (type === "italic") {
+    replacement = wrapSelection(selected, "_", "italic text");
+    cursorStart = start + 1;
+    cursorEnd = start + replacement.length - 1;
+  } else if (type === "underline") {
+    replacement = wrapSelection(selected, "<u>", "underlined text", "</u>");
+    cursorStart = start + 3;
+    cursorEnd = start + replacement.length - 4;
+  } else if (type === "heading") {
+    const lineInfo = currentLineRange(contentInput.value, start, end);
+    replacement = prefixLines(contentInput.value.slice(lineInfo.start, lineInfo.end), "## ");
+    contentInput.setRangeText(replacement, lineInfo.start, lineInfo.end, "select");
+    contentInput.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  } else if (type === "bullet") {
+    const lineInfo = currentLineRange(contentInput.value, start, end);
+    replacement = prefixLines(contentInput.value.slice(lineInfo.start, lineInfo.end), "- ");
+    contentInput.setRangeText(replacement, lineInfo.start, lineInfo.end, "select");
+    contentInput.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  } else if (type === "checklist") {
+    const lineInfo = currentLineRange(contentInput.value, start, end);
+    replacement = prefixLines(contentInput.value.slice(lineInfo.start, lineInfo.end), "- [ ] ");
+    contentInput.setRangeText(replacement, lineInfo.start, lineInfo.end, "select");
+    contentInput.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+
+  contentInput.setRangeText(replacement, start, end, "end");
+  contentInput.setSelectionRange(cursorStart, cursorEnd);
+  contentInput.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function wrapSelection(selected, prefix, fallback, suffix = prefix) {
+  return `${prefix}${selected || fallback}${suffix}`;
+}
+
+function currentLineRange(value, selectionStart, selectionEnd) {
+  const lineStart = value.lastIndexOf("\n", Math.max(0, selectionStart - 1)) + 1;
+  const nextBreak = value.indexOf("\n", selectionEnd);
+
+  return {
+    start: lineStart,
+    end: nextBreak === -1 ? value.length : nextBreak
+  };
+}
+
+function prefixLines(value, prefix) {
+  return value
+    .split("\n")
+    .map(line => line.trim().startsWith(prefix.trim()) ? line : `${prefix}${line}`)
+    .join("\n");
+}
+
+function renderMarkdownContent(content) {
+  if (!content.trim()) return "<p>No content yet.</p>";
+
+  const lines = escapeHtml(content).split("\n");
+  const html = [];
+  let listType = null;
+
+  const closeList = () => {
+    if (!listType) return;
+    html.push("</ul>");
+    listType = null;
+  };
+
+  lines.forEach(line => {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      closeList();
+      return;
+    }
+
+    const checklistMatch = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
+    if (checklistMatch) {
+      if (listType !== "checklist") {
+        closeList();
+        html.push('<ul class="checklist-render">');
+        listType = "checklist";
+      }
+      const checked = checklistMatch[1].toLowerCase() === "x" ? " checked" : "";
+      html.push(`<li><input type="checkbox" disabled${checked}> <span>${formatInlineMarkdown(checklistMatch[2])}</span></li>`);
+      return;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/);
+    if (bulletMatch) {
+      if (listType !== "ul") {
+        closeList();
+        html.push("<ul>");
+        listType = "ul";
+      }
+      html.push(`<li>${formatInlineMarkdown(bulletMatch[1])}</li>`);
+      return;
+    }
+
+    closeList();
+
+    const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length + 1;
+      html.push(`<h${level}>${formatInlineMarkdown(headingMatch[2])}</h${level}>`);
+      return;
+    }
+
+    html.push(`<p>${formatInlineMarkdown(trimmed)}</p>`);
+  });
+
+  closeList();
+  return html.join("");
+}
+
+function formatInlineMarkdown(value) {
+  return value
+    .replace(/&lt;u&gt;(.+?)&lt;\/u&gt;/g, "<u>$1</u>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/_(.+?)_/g, "<em>$1</em>");
+}
+
+function bindEditorEnhancements() {
+  ["title", "content"].forEach(id => {
+    document.getElementById(id)?.addEventListener("input", scheduleAutosave);
+  });
+
+  window.addEventListener("keydown", event => {
+    if (!document.getElementById("notesWorkspace")?.classList.contains("visible")) return;
+
+    const modifierPressed = event.metaKey || event.ctrlKey;
+    if (!modifierPressed) return;
+
+    const key = event.key.toLowerCase();
+    if (key === "s") {
+      event.preventDefault();
+      saveCurrentNote({ silent: false });
+    } else if (key === "n") {
+      event.preventDefault();
+      startNewNote();
+    } else if (key === "b") {
+      event.preventDefault();
+      applyFormatting("bold");
+    } else if (key === "i") {
+      event.preventDefault();
+      applyFormatting("italic");
+    } else if (key === "u") {
+      event.preventDefault();
+      applyFormatting("underline");
+    }
+  });
 }
 
 function editNote(id) {
@@ -764,10 +1087,12 @@ window.selectNote = selectNote;
 window.startNewNote = startNewNote;
 window.saveCurrentNote = saveCurrentNote;
 window.updateNote = updateNote;
+window.applyFormatting = applyFormatting;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindAuthToggleButtons();
   bindSessionActivityTracking();
+  bindEditorEnhancements();
   updateAppVisibility();
 
   if (getAuthToken()) {
