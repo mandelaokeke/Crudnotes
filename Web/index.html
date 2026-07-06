@@ -11,6 +11,9 @@
   </head>
   <body>
     <main class="page">
+      <button class="theme-toggle-icon auth-theme-toggle auth-only" data-theme-toggle type="button" onclick="toggleTheme()" aria-label="Toggle dark mode">
+        <span aria-hidden="true">☾</span>
+      </button>
       <section class="hero auth-only" id="heroSection">
         <div class="hero-main">
           <div class="brand-row">
@@ -112,7 +115,9 @@
               <h2>My Notes</h2>
             </div>
             <div class="sidebar-actions">
-              <button id="themeToggle" class="ghost compact theme-toggle" type="button" onclick="toggleTheme()" aria-label="Toggle dark mode">Dark</button>
+              <button class="theme-toggle-icon" data-theme-toggle type="button" onclick="toggleTheme()" aria-label="Toggle dark mode">
+                <span aria-hidden="true">☾</span>
+              </button>
               <button class="ghost compact" type="button" onclick="loadNotes()">Refresh</button>
               <button class="ghost compact logout-btn" type="button" onclick="signOut()">Logout</button>
             </div>

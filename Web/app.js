@@ -1133,11 +1133,10 @@ function setTheme(theme) {
   document.body.classList.toggle("dark-mode", isDark);
   localStorage.setItem("crudnotes_theme", isDark ? "dark" : "light");
 
-  const toggle = document.getElementById("themeToggle");
-  if (toggle) {
-    toggle.textContent = isDark ? "Light" : "Dark";
+  document.querySelectorAll("[data-theme-toggle]").forEach(toggle => {
+    toggle.innerHTML = `<span aria-hidden="true">${isDark ? "☀" : "☾"}</span>`;
     toggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
-  }
+  });
 }
 
 function saveEditorSelection() {
