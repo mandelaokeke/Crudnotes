@@ -11,6 +11,7 @@ const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 let lastSignupEmail = "";
 let notesCache = [];
 let selectedNoteId = null;
+let editorMode = "new";
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 let sessionTimeoutId = null;
 
@@ -151,6 +152,7 @@ function updateAppVisibility() {
   stopSessionTimeout();
   notesCache = [];
   selectedNoteId = null;
+  editorMode = "new";
 
   const list = document.getElementById("list");
   if (list) list.innerHTML = "";
@@ -343,6 +345,8 @@ function signIn() {
 
       setAuthToken(idToken);
       localStorage.setItem("crudnotes_display_name", displayName);
+      selectedNoteId = null;
+      editorMode = "new";
       updateAppVisibility();
       loadNotes();
     },
@@ -362,6 +366,7 @@ function signOut() {
   localStorage.removeItem("crudnotes_display_name");
   notesCache = [];
   selectedNoteId = null;
+  editorMode = "new";
 
   const titleInput = document.getElementById("title");
   const contentInput = document.getElementById("content");
@@ -422,17 +427,24 @@ async function loadNotes() {
 
     if (!notesCache.length) {
       selectedNoteId = null;
+      editorMode = "new";
       list.innerHTML = `<p class="muted sidebar-empty">No notes yet. Create your first note.</p>`;
       renderSelectedNote(null);
       return;
     }
 
-    if (!selectedNoteId || !notesCache.some(note => note.noteId === selectedNoteId)) {
-      selectedNoteId = notesCache[0].noteId;
+    if (selectedNoteId && !notesCache.some(note => note.noteId === selectedNoteId)) {
+      selectedNoteId = null;
+      editorMode = "new";
     }
 
     renderNoteTitles();
-    renderSelectedNote(notesCache.find(note => note.noteId === selectedNoteId));
+
+    if (selectedNoteId) {
+      renderSelectedNote(notesCache.find(note => note.noteId === selectedNoteId));
+    } else {
+      renderSelectedNote(null);
+    }
   } catch (err) {
     list.innerHTML = `<p class="error">Could not load notes: ${escapeHtml(err.message)}</p>`;
   }
@@ -444,11 +456,12 @@ function renderNoteTitles() {
 
   list.innerHTML = notesCache.map(note => {
     const isActive = note.noteId === selectedNoteId ? "active" : "";
+    const noteId = inlineJsString(note.noteId);
     const title = escapeHtml(note.title || "Untitled note");
     const preview = escapeHtml((note.content || "").split("\n").find(Boolean) || "No content yet");
 
     return `
-      <button class="note-title-item ${isActive}" type="button" onclick="selectNote('${note.noteId}')">
+      <button class="note-title-item ${isActive}" type="button" onclick="selectNote('${noteId}')">
         <strong>${title}</strong>
         <span>${preview}</span>
       </button>
@@ -458,6 +471,7 @@ function renderNoteTitles() {
 
 function selectNote(noteId) {
   selectedNoteId = noteId;
+  editorMode = "view";
   const note = notesCache.find(item => item.noteId === noteId);
   renderNoteTitles();
   renderSelectedNote(note);
@@ -470,34 +484,79 @@ function renderSelectedNote(note) {
   const preview = document.getElementById("selectedNotePreview");
 
   if (!note) {
+    editorMode = "new";
     if (heading) heading.textContent = "Create Note";
     if (titleInput) titleInput.value = "";
     if (contentInput) contentInput.value = "";
+    setEditorFieldsVisible(true);
+    renderEditorActions("new");
     if (preview) {
-      preview.className = "selected-note-preview empty-state";
-      preview.textContent = "Select a note title from the left to preview it here.";
+      preview.className = "selected-note-preview empty-state hidden-preview";
+      preview.textContent = "";
     }
     return;
   }
 
-  if (heading) heading.textContent = "Edit Note";
-  if (titleInput) titleInput.value = note.title || "";
-  if (contentInput) contentInput.value = note.content || "";
+  if (editorMode === "edit") {
+    if (heading) heading.textContent = "Edit Note";
+    if (titleInput) titleInput.value = note.title || "";
+    if (contentInput) contentInput.value = note.content || "";
+    setEditorFieldsVisible(true);
+    renderEditorActions("edit");
+    if (preview) {
+      preview.className = "selected-note-preview hidden-preview";
+      preview.textContent = "";
+    }
+    return;
+  }
+
+  editorMode = "view";
+  if (heading) heading.textContent = "Selected Note";
+  setEditorFieldsVisible(false);
+  renderEditorActions("view", note.noteId);
 
   if (preview) {
-    preview.className = "selected-note-preview";
+    preview.className = "selected-note-preview selected-note-view";
     preview.innerHTML = `
       <h3>${escapeHtml(note.title || "Untitled note")}</h3>
       <div class="note-body-formatted">${formatNoteContent(note.content || "")}</div>
-      <div class="note-preview-actions">
-        <button class="ghost" type="button" onclick="deleteNote('${note.noteId}')">Delete</button>
-      </div>
     `;
   }
 }
 
+function setEditorFieldsVisible(isVisible) {
+  const titleInput = document.getElementById("title");
+  const contentInput = document.getElementById("content");
+
+  [titleInput, contentInput].forEach(field => {
+    if (!field) return;
+    field.classList.toggle("hidden-preview", !isVisible);
+    field.disabled = !isVisible;
+  });
+}
+
+function renderEditorActions(mode, noteId = selectedNoteId) {
+  const actions = document.querySelector(".editor-actions");
+  if (!actions) return;
+
+  if (mode === "view" && noteId) {
+    const safeNoteId = inlineJsString(noteId);
+    actions.innerHTML = `
+      <button class="ghost" type="button" onclick="editNote('${safeNoteId}')">Edit</button>
+      <button class="ghost danger-btn" type="button" onclick="deleteNote('${safeNoteId}')">Delete</button>
+    `;
+    return;
+  }
+
+  actions.innerHTML = `
+    <button class="ghost" type="button" onclick="startNewNote()">Clear</button>
+    <button class="primary" type="button" onclick="saveCurrentNote()">Save Note</button>
+  `;
+}
+
 function startNewNote() {
   selectedNoteId = null;
+  editorMode = "new";
   renderNoteTitles();
   renderSelectedNote(null);
   setTimeout(() => document.getElementById("title")?.focus(), 100);
@@ -538,6 +597,7 @@ async function createNote() {
     });
 
     selectedNoteId = createdNote?.noteId || null;
+    editorMode = selectedNoteId ? "view" : "new";
     await loadNotes();
   } catch (err) {
     alert(`Could not create note: ${err.message}`);
@@ -560,6 +620,7 @@ async function updateNote(id) {
     });
 
     selectedNoteId = id;
+    editorMode = "view";
     await loadNotes();
   } catch (err) {
     alert(`Could not update note: ${err.message}`);
@@ -567,16 +628,29 @@ async function updateNote(id) {
 }
 
 function editNote(id) {
-  selectNote(id);
+  selectedNoteId = id;
+  editorMode = "edit";
+  const note = notesCache.find(item => item.noteId === id);
+  if (!note) {
+    startNewNote();
+    return;
+  }
+  renderNoteTitles();
+  renderSelectedNote(note);
 }
 
 async function deleteNote(id) {
-  if (!confirm("Delete this note?")) return;
+  const note = notesCache.find(item => item.noteId === id);
+  const noteTitle = note?.title ? `"${note.title}"` : "this note";
+  if (!confirm(`Delete ${noteTitle}? This cannot be undone.`)) return;
 
   try {
     await apiFetch(`/notes/${id}`, { method: "DELETE" });
 
-    if (selectedNoteId === id) selectedNoteId = null;
+    if (selectedNoteId === id) {
+      selectedNoteId = null;
+      editorMode = "new";
+    }
     await loadNotes();
   } catch (err) {
     alert(`Could not delete note: ${err.message}`);
@@ -587,6 +661,10 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, m => ({
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
   }[m]));
+}
+
+function inlineJsString(value) {
+  return escapeHtml(String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\r/g, "\\r").replace(/\n/g, "\\n"));
 }
 
 window.showSignupCard = showSignupCard;

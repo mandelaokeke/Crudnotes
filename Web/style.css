@@ -690,6 +690,7 @@ button:hover { transform: translateY(-1px); }
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .note-title-input {
@@ -735,6 +736,7 @@ button:hover { transform: translateY(-1px); }
   border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 22px;
   background: rgba(248, 250, 252, 0.72);
+  overflow: auto;
 }
 
 .selected-note-preview h3 {
@@ -750,10 +752,6 @@ button:hover { transform: translateY(-1px); }
 
 .note-body-formatted p {
   margin: 0 0 1rem;
-}
-
-.note-preview-actions {
-  margin-top: 18px;
 }
 
 .empty-state,
@@ -831,4 +829,40 @@ button:hover { transform: translateY(-1px); }
   .sidebar-actions button {
     flex: 1;
   }
+}
+/* Selected note view + edit/delete controls */
+.selected-note-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.selected-note-view h3 {
+  font-size: clamp(1.9rem, 4vw, 3.4rem);
+  line-height: 1.08;
+  letter-spacing: 0;
+  margin-bottom: 22px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.34);
+  overflow-wrap: anywhere;
+}
+
+.hidden-preview {
+  display: none !important;
+}
+
+.danger-btn {
+  color: #b91c1c;
+  border: 1px solid rgba(185, 28, 28, 0.25);
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.danger-btn:hover,
+.danger-btn:focus-visible {
+  background: rgba(254, 226, 226, 0.9);
+}
+
+.editor-actions .ghost,
+.editor-actions .primary {
+  min-width: 110px;
 }
