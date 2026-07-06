@@ -457,19 +457,29 @@ function renderNoteTitles() {
   list.innerHTML = notesCache.map(note => {
     const isActive = note.noteId === selectedNoteId ? "active" : "";
     const noteId = inlineJsString(note.noteId);
+    const noteIdAttribute = escapeHtml(note.noteId);
     const title = escapeHtml(note.title || "Untitled note");
     const preview = escapeHtml((note.content || "").split("\n").find(Boolean) || "No content yet");
 
     return `
-      <button class="note-title-item ${isActive}" type="button" onclick="selectNote('${noteId}')">
-        <strong>${title}</strong>
-        <span>${preview}</span>
-      </button>
+      <div class="note-swipe-row ${isActive}" data-note-id="${noteIdAttribute}">
+        <div class="note-swipe-actions" aria-label="Note actions">
+          <button class="note-swipe-action edit" type="button" onclick="editNote('${noteId}')">Edit</button>
+          <button class="note-swipe-action delete" type="button" onclick="deleteNote('${noteId}')">Delete</button>
+        </div>
+        <button class="note-title-item ${isActive}" type="button" onclick="selectNote('${noteId}')">
+          <strong>${title}</strong>
+          <span>${preview}</span>
+        </button>
+      </div>
     `;
   }).join("");
+
+  bindMobileSwipeActions();
 }
 
 function selectNote(noteId) {
+  closeSwipeActions();
   selectedNoteId = noteId;
   editorMode = "view";
   const note = notesCache.find(item => item.noteId === noteId);
@@ -555,6 +565,7 @@ function renderEditorActions(mode, noteId = selectedNoteId) {
 }
 
 function startNewNote() {
+  closeSwipeActions();
   selectedNoteId = null;
   editorMode = "new";
   renderNoteTitles();
@@ -628,6 +639,7 @@ async function updateNote(id) {
 }
 
 function editNote(id) {
+  closeSwipeActions();
   selectedNoteId = id;
   editorMode = "edit";
   const note = notesCache.find(item => item.noteId === id);
@@ -640,6 +652,7 @@ function editNote(id) {
 }
 
 async function deleteNote(id) {
+  closeSwipeActions();
   const note = notesCache.find(item => item.noteId === id);
   const noteTitle = note?.title ? `"${note.title}"` : "this note";
   if (!confirm(`Delete ${noteTitle}? This cannot be undone.`)) return;
@@ -655,6 +668,70 @@ async function deleteNote(id) {
   } catch (err) {
     alert(`Could not delete note: ${err.message}`);
   }
+}
+
+function isSmallScreen() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function closeSwipeActions(exceptRow = null) {
+  document.querySelectorAll(".note-swipe-row.swipe-open").forEach(row => {
+    if (row !== exceptRow) row.classList.remove("swipe-open");
+  });
+}
+
+function bindMobileSwipeActions() {
+  document.querySelectorAll(".note-swipe-row").forEach(row => {
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let currentY = 0;
+
+    const noteButton = row.querySelector(".note-title-item");
+    if (noteButton) {
+      noteButton.addEventListener("click", event => {
+        if (!isSmallScreen() || !row.classList.contains("swipe-open")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeSwipeActions();
+      }, true);
+    }
+
+    row.addEventListener("touchstart", event => {
+      if (!isSmallScreen() || !event.touches.length) return;
+      startX = event.touches[0].clientX;
+      startY = event.touches[0].clientY;
+      currentX = startX;
+      currentY = startY;
+    }, { passive: true });
+
+    row.addEventListener("touchmove", event => {
+      if (!isSmallScreen() || !event.touches.length) return;
+      currentX = event.touches[0].clientX;
+      currentY = event.touches[0].clientY;
+
+      const deltaX = currentX - startX;
+      const deltaY = currentY - startY;
+      if (Math.abs(deltaX) > 16 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    row.addEventListener("touchend", () => {
+      if (!isSmallScreen()) return;
+
+      const deltaX = currentX - startX;
+      const deltaY = currentY - startY;
+      if (Math.abs(deltaX) <= Math.abs(deltaY) || Math.abs(deltaX) < 44) return;
+
+      if (deltaX < 0) {
+        closeSwipeActions(row);
+        row.classList.add("swipe-open");
+      } else {
+        row.classList.remove("swipe-open");
+      }
+    });
+  });
 }
 
 function escapeHtml(s) {
